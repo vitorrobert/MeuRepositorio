@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transcritor de Áudio</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.10.0/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        body {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            transition: background-color 1s ease;
+        }
+        .hidden {
+            display: none;
+        }
+        #player-container {
+            margin-top: 20px;
+            position: relative;
+            z-index: 2;
+        }
+        #transcription-container {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            min-height: 100px;
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 2;
+            position: relative;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .progress {
+            margin-top: 10px;
+        }
+        /* Estilos para o visualizador de áudio */
+        #visualizer-container {
+            height: 120px;
+            background-color: rgba(248, 249, 250, 0.7);
+            border-radius: 5px;
+            margin-bottom: 15px;
+            position: relative;
+            overflow: hidden;
+            z-index: 2;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        .audio-bar {
+            position: absolute;
+            bottom: 0;
+            background-color: #0d6efd;
+            width: 5px;
+            border-radius: 2px 2px 0 0;
+            transform-origin: bottom;
+            transition: height 0.1s ease;
+            z-index: 3;
+        }
+        /* Animação para quando não está tocando */
+        .default-animation .audio-bar {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0% { height: 10px; }
+            50% { height: 30px; }
+            100% { height: 10px; }
+        }
+        /* Cores variadas para as barras */
+        .bar-blue { background-color: #0d6efd; }
+        .bar-indigo { background-color: #6610f2; }
+        .bar-purple { background-color: #6f42c1; }
+        .bar-pink { background-color: #d63384; }
+        .bar-red { background-color: #dc3545; }
+        /* Fundo animado estilo Windows Media Player */
+        #background-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 1.5s ease;
+            pointer-events: none;
+        }
+        .background-active {
+            opacity: 1 !important;
+        }
+        .card {
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 2;
+            position: relative;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+        }
+        .visualizer-mode {
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+        }
+        .visualizer-mode .card {
+            background-color: rgba(30, 30, 30, 0.8);
+            color: white;
+            border-color: rgba(100, 100, 100, 0.3);
+        }
+        .visualizer-mode .card-header {
+            background-color: rgba(50, 50, 50, 0.8);
+            color: white;
+            border-color: rgba(100, 100, 100, 0.3);
+        }
+        .visualizer-mode #transcription-container {
+            background-color: rgba(40, 40, 40, 0.8);
+            color: white;
+            border-color: rgba(100, 100, 100, 0.3);
+        }
+        .visualizer-mode #visualizer-container {
+            background-color: rgba(20, 20, 20, 0.7);
+        }
+        .visualizer-mode .btn-primary {
+            background-color: #8a2be2;
+            border-color: #7a1cd2;
+        }
+        /* Gradiente animado */
+        .gradient-bg {
+            background: linear-gradient(45deg, #ff8a00, #e52e71, #2be2a6, #40c9ff);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+        }
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        /* Botão para alternar modo visualização */
+        #toggle-visualizer-mode {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: 0.7;
+            transition: all 0.8s ease;
+            animation: float 8s ease-in-out infinite;
+        }
+        @keyframes float {
+            0% { transform: translatey(0px); }
+            50% { transform: translatey(-20px); }
+            100% { transform: translatey(0px); }
+        }
+        /* Estilos para destacar transcrição */
+        .highlight-text {
+            background-color: yellow;
+            font-weight: bold;
+            padding: 2px;
+            border-radius: 3px;
+        }
+        .played-text {
+            color: gray;
+        }
+        /* Lista de áudios executados - MODIFICADO */
+        .audio-list {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .audio-item {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid #ddd;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+        }
+        .audio-item:hover {
+            background-color: #e9ecef;
+        }
+        .audio-item:last-child {
+            border-bottom: none;
+        }
+        .audio-item .audio-icon {
+            margin-right: 10px;
+            color: #0d6efd;
+            font-size: 1.2rem;
+        }
+        .audio-item .audio-info {
+            flex-grow: 1;
+        }
+        .audio-item .audio-duration {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-top: 3px;
+        }
+        .audio-item.active {
+            background-color: #e7f1ff;
+            border-left: 4px solid #0d6efd;
+        }
+        .visualizer-mode .audio-list {
+            background-color: rgba(40, 40, 40, 0.8);
+            color: white;
+            border-color: rgba(100, 100, 100, 0.3);
+        }
+        .visualizer-mode .audio-item {
+            border-bottom-color: rgba(100, 100, 100, 0.5);
+        }
+        .visualizer-mode .audio-item:hover {
+            background-color: rgba(60, 60, 60, 0.8);
+        }
+        .visualizer-mode .audio-item.active {
+            background-color: rgba(50, 100, 200, 0.4);
+            border-left-color: #8a2be2;
+        }
+        .visualizer-mode .audio-duration {
+            color: #adb5bd;
+        }
+    </style>
+</head>
+<body>
+    <!-- Container de fundo animado -->
+    <div id="background-animation"></div>
+    
+    <!-- Botão de modo visualizador -->
+    <button id="toggle-visualizer-mode" class="btn btn-primary">
+        <i class="bi bi-music-note-beamed"></i>
+    </button>
+    
+    <div class="container">
+        <h1 class="text-center mb-4">Transcritor de Áudio</h1>
+        
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        Selecione um arquivo de áudio para transcrição
+                    </div>
+                    <div class="card-body">
+                        <form id="upload-form" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="audio-file" class="form-label">Arquivo de Áudio</label>
+                                <input class="form-control" type="file" id="audio-file" accept=".mp3,.wav,.ogg,.m4a">
+                                <div class="form-text">Formatos aceitos: MP3, WAV, OGG, M4A (máx. 16MB)</div>
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                Transcrever
+                            </button>
+                        </form>
+                        
+                        <div id="progress-container" class="hidden">
+                            <div class="progress">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                            </div>
+                            <p class="text-center mt-2">Transcrevendo áudio...</p>
+                        </div>
+                        
+                        <div id="result-container" class="hidden mt-4">
+                            <h5>Resultado da Transcrição</h5>
+                            
+                            <!-- Visualizador de áudio -->
+                            <div id="visualizer-container" class="default-animation"></div>
+                            
+                            <div id="player-container">
+                                <audio id="audio-player" controls class="w-100"></audio>
+                            </div>
+                            
+                            <h6 class="mt-3">Transcrição:</h6>
+                            <div id="transcription-container"></div>
+                        </div>
+                        
+                        <!-- Lista de áudios executados - MODIFICADO -->
+                        <div id="transcribed-audios" class="audio-list hidden mt-4">
+                            <h5 class="mb-3">Áudios Executados <span class="badge bg-primary ms-2" id="audio-count">0</span></h5>
+                            <div id="audio-list"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            const NUM_BARS = 40; // Número de barras no visualizador
+            const visualizerContainer = document.getElementById('visualizer-container');
+            const audioPlayer = document.getElementById('audio-player');
+            const backgroundAnimation = document.getElementById('background-animation');
+            const transcriptionContainer = document.getElementById('transcription-container');
+            const audioListContainer = document.getElementById('audio-list');
+            const transcribedAudios = document.getElementById('transcribed-audios');
+            const audioCountBadge = document.getElementById('audio-count');
+            let audioContext;
+            let analyser;
+            let source;
+            let animationId;
+            let dataArray;
+            let isVisualizerActive = false;
+            let visualizerMode = false;
+            
+            // Variáveis para transcrição e lista de áudios executados
+            let transcriptionSegments = [];
+            let fullTranscription = "";
+            let currentSegmentIndex = -1;
+            let playedAudios = [];
+            let currentAudioIndex = -1; // Para rastrear o áudio atual na lista
+
+            // Função para criar blobs para o fundo
+            function createBlobs() {
+                backgroundAnimation.innerHTML = '';
+                const colors = [
+                    'rgba(255, 0, 128, 0.5)', 
+                    'rgba(128, 0, 255, 0.5)', 
+                    'rgba(0, 128, 255, 0.5)',
+                    'rgba(0, 255, 128, 0.5)',
+                    'rgba(255, 255, 0, 0.5)'
+                ];
+                for (let i = 0; i < 5; i++) {
+                    const blob = document.createElement('div');
+                    blob.className = 'blob';
+                    blob.style.backgroundColor = colors[i];
+                    blob.style.width = (Math.random() * 200 + 200) + 'px';
+                    blob.style.height = (Math.random() * 200 + 200) + 'px';
+                    blob.style.left = (Math.random() * 80) + '%';
+                    blob.style.top = (Math.random() * 80) + '%';
+                    blob.style.animationDelay = (Math.random() * 2) + 's';
+                    backgroundAnimation.appendChild(blob);
+                }
+            }
+            
+            // Alternar modo visualizador
+            $('#toggle-visualizer-mode').on('click', function() {
+                visualizerMode = !visualizerMode;
+                if (visualizerMode) {
+                    $('body').addClass('visualizer-mode');
+                    backgroundAnimation.classList.add('background-active');
+                } else {
+                    $('body').removeClass('visualizer-mode');
+                    backgroundAnimation.classList.remove('background-active');
+                }
+            });
+            
+            // Criar as barras para o visualizador
+            function createBars() {
+                visualizerContainer.innerHTML = '';
+                const barWidth = visualizerContainer.clientWidth / NUM_BARS;
+                const colorClasses = ['bar-blue', 'bar-indigo', 'bar-purple', 'bar-pink', 'bar-red'];
+                for (let i = 0; i < NUM_BARS; i++) {
+                    const bar = document.createElement('div');
+                    bar.className = 'audio-bar ' + colorClasses[i % colorClasses.length];
+                    bar.style.left = i * barWidth + 'px';
+                    bar.style.width = barWidth - 2 + 'px'; // Espaço entre barras
+                    bar.style.height = '10px';
+                    visualizerContainer.appendChild(bar);
+                }
+            }
+            
+            // Iniciar o visualizador de áudio
+            function initVisualizer() {
+                if (isVisualizerActive) return;
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                source = audioContext.createMediaElementSource(audioPlayer);
+                source.connect(analyser);
+                analyser.connect(audioContext.destination);
+                const bufferLength = analyser.frequencyBinCount;
+                dataArray = new Uint8Array(bufferLength);
+                visualizerContainer.classList.remove('default-animation');
+                isVisualizerActive = true;
+                renderFrame();
+                if (!visualizerMode) {
+                    $('#toggle-visualizer-mode').click();
+                }
+            }
+            
+            // Renderizar o frame do visualizador
+            function renderFrame() {
+                animationId = requestAnimationFrame(renderFrame);
+                analyser.getByteFrequencyData(dataArray);
+                const bars = visualizerContainer.querySelectorAll('.audio-bar');
+                const step = Math.floor(dataArray.length / bars.length);
+                let bassValue = 0;
+                let midValue = 0;
+                let trebleValue = 0;
+                for (let i = 0; i < bars.length; i++) {
+                    const value = dataArray[i * step];
+                    const height = (value / 255) * visualizerContainer.clientHeight;
+                    bars[i].style.height = Math.max(4, height) + 'px';
+                    if (i < bars.length / 3) {
+                        bassValue += value;
+                    } else if (i < bars.length * 2/3) {
+                        midValue += value;
+                    } else {
+                        trebleValue += value;
+                    }
+                }
+                bassValue = bassValue / (bars.length / 3) / 255;
+                midValue = midValue / (bars.length / 3) / 255;
+                trebleValue = trebleValue / (bars.length / 3) / 255;
+                const blobs = document.querySelectorAll('.blob');
+                if (blobs.length > 0) {
+                    blobs[0].style.transform = `scale(${0.8 + bassValue * 0.5})`;
+                    if (blobs[1]) blobs[1].style.transform = `scale(${0.8 + midValue * 0.5})`;
+                    if (blobs[2]) blobs[2].style.transform = `scale(${0.8 + trebleValue * 0.5})`;
+                    if (blobs[3]) blobs[3].style.transform = `scale(${0.8 + (bassValue + midValue) * 0.25})`;
+                    if (blobs[4]) blobs[4].style.transform = `scale(${0.8 + (midValue + trebleValue) * 0.25})`;
+                }
+            }
+            
+            // Parar o visualizador
+            function stopVisualizer() {
+                if (!isVisualizerActive) return;
+                cancelAnimationFrame(animationId);
+                if (source) {
+                    source.disconnect();
+                }
+                visualizerContainer.classList.add('default-animation');
+                isVisualizerActive = false;
+                const blobs = document.querySelectorAll('.blob');
+                blobs.forEach(blob => {
+                    blob.style.transform = 'scale(1)';
+                });
+            }
+            
+            // Eventos do player de áudio
+            audioPlayer.addEventListener('play', function() {
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume();
+                } else if (!isVisualizerActive) {
+                    initVisualizer();
+                }
+                // Atualiza o item ativo na lista
+                updateActiveAudioItem();
+            });
+            
+            audioPlayer.addEventListener('pause', function() {
+                if (audioContext) {
+                    audioContext.suspend();
+                }
+            });
+            
+            audioPlayer.addEventListener('ended', function() {
+                stopVisualizer();
+                if (visualizerMode) {
+                    $('#toggle-visualizer-mode').click();
+                }
+                // Ao terminar, adiciona o áudio à lista de executados se não estiver lá
+                const fileName = audioPlayer.dataset.filename || "Áudio " + (playedAudios.length + 1);
+                addPlayedAudio(fileName, audioPlayer.src, fullTranscription, audioPlayer.duration);
+            });
+            
+            // Atualizar barras e blobs em resize
+            window.addEventListener('resize', function() {
+                createBars();
+                createBlobs();
+            });
+            
+            createBlobs();
+            
+            // FUNÇÕES DE TRANSCRIÇÃO E DESTAQUE:
+            // Atualiza o destaque conforme o áudio avança:
+            function updateTranscriptionHighlight() {
+                if (transcriptionSegments.length === 0) return;
+                const currentTime = audioPlayer.currentTime;
+                let matchedSegmentIndex = -1;
+                
+                // Encontra o segmento atual com base no tempo
+                for (let i = 0; i < transcriptionSegments.length; i++) {
+                    if (currentTime >= transcriptionSegments[i].startTime && 
+                        (i === transcriptionSegments.length - 1 || currentTime < transcriptionSegments[i+1].startTime)) {
+                        matchedSegmentIndex = i;
+                        break;
+                    }
+                }
+                
+                if (matchedSegmentIndex !== -1 && matchedSegmentIndex !== currentSegmentIndex) {
+                    currentSegmentIndex = matchedSegmentIndex;
+                    
+                    // Constrói o HTML com os destaques apropriados
+                    let html = '<p>';
+                    transcriptionSegments.forEach((segment, i) => {
+                        if (i < currentSegmentIndex) {
+                            html += `<span class="played-text">${segment.text}</span> `;
+                        } else if (i === currentSegmentIndex) {
+                            html += `<span class="highlight-text">${segment.text}</span> `;
+                        } else {
+                            html += `${segment.text} `;
+                        }
+                    });
+                    html += '</p>';
+                    
+                    // Atualiza o container de transcrição
+                    transcriptionContainer.innerHTML = html;
+                    
+                    // Rola automaticamente para o texto destacado
+                    const highlightedElement = transcriptionContainer.querySelector('.highlight-text');
+                    if (highlightedElement) {
+                        highlightedElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }
+            }
+            
+            // Evento para atualizar o destaque durante a reprodução
+            audioPlayer.addEventListener('timeupdate', updateTranscriptionHighlight);
+            
+            // Processa a transcrição e gera segmentos com timestamps
+            function processTranscription(text) {
+                fullTranscription = text;
+                
+                // Divide o texto em frases usando pontuação como separador
+                const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+                
+                transcriptionSegments = [];
+                let cumulativeTime = 0;
+                
+                // Calcula tempo aproximado por frase baseado na duração do áudio
+                const avgSentenceTime = audioPlayer.duration 
+                    ? audioPlayer.duration / Math.max(sentences.length, 1) 
+                    : 5;
+                
+                // Cria segmentos com timestamps
+                sentences.forEach(sentence => {
+                    transcriptionSegments.push({
+                        text: sentence.trim(),
+                        startTime: cumulativeTime,
+                        endTime: cumulativeTime + avgSentenceTime
+                    });
+                    cumulativeTime += avgSentenceTime;
+                });
+                
+                // Inicializa a exibição da transcrição
+                transcriptionContainer.innerHTML = `<p>${fullTranscription}</p>`;
+                currentSegmentIndex = -1; // Reinicia o índice do segmento atual
+            }
+            
+            // FUNÇÃO PARA ADICIONAR ÁUDIO À LISTA DE EXECUTADOS:
+            function addPlayedAudio(fileName, audioUrl, transcription, duration) {
+                // Verifica se este áudio já está na lista
+                if (!playedAudios.some(audio => audio.audioUrl === audioUrl)) {
+                    // Formata a duração do áudio
+                    const formatDuration = duration => {
+                        if (!duration || isNaN(duration)) return "--:--";
+                        const minutes = Math.floor(duration / 60);
+                        const seconds = Math.floor(duration % 60);
+                        return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                    };
+                    
+                    // Adiciona o áudio à lista de áudios executados
+                    const audioData = { 
+                        fileName, 
+                        audioUrl, 
+                        transcription, 
+                        duration,
+                        timestamp: new Date().toLocaleString(),
+                        id: 'audio-' + Date.now()
+                    };
+                    playedAudios.push(audioData);
+                    
+                    // Atualiza a contagem de áudios
+                    audioCountBadge.textContent = playedAudios.length;
+                    
+                    // Exibe o container da lista se estava oculto
+                    transcribedAudios.classList.remove('hidden');
+                    
+                    // Cria o elemento do item da lista
+                    const audioItem = document.createElement('div');
+                    audioItem.classList.add('audio-item');
+                    audioItem.id = audioData.id;
+                    audioItem.innerHTML = `
+                        <div class="audio-icon">
+                            <i class="bi bi-music-note"></i>
+                        </div>
+                        <div class="audio-info">
+                            <div class="audio-name">${fileName}</div>
+                            <div class="audio-duration">${formatDuration(duration)} • ${audioData.timestamp}</div>
+                        </div>
+                    `;
+                    
+                    // Adiciona evento de clique para reproduzir o áudio
+                    audioItem.addEventListener('click', () => {
+                        // Define o áudio atual
+                        audioPlayer.src = audioUrl;
+                        audioPlayer.dataset.filename = fileName;
+                        
+                        // Processa a transcrição
+                        processTranscription(transcription);
+                        
+                        // Atualiza o índice do áudio atual
+                        currentAudioIndex = playedAudios.findIndex(audio => audio.id === audioData.id);
+                        
+                        // Atualiza o visual do item ativo
+                        updateActiveAudioItem();
+                        
+                        // Inicia a reprodução
+                        audioPlayer.play();
+                        
+                        // Mostra o resultado se estiver oculto
+                        $('#result-container').removeClass('hidden');
+                    });
+                    
+                    // Adiciona o item à lista
+                    audioListContainer.insertBefore(audioItem, audioListContainer.firstChild);
+                }
+            }
+            
+            // Função para atualizar o item ativo na lista
+            function updateActiveAudioItem() {
+                // Remove a classe ativa de todos os itens
+                const allItems = document.querySelectorAll('.audio-item');
+                allItems.forEach(item => item.classList.remove('active'));
+                
+                // Adiciona a classe ativa ao item atual
+                if (currentAudioIndex >= 0 && playedAudios[currentAudioIndex]) {
+                    const activeItem = document.getElementById(playedAudios[currentAudioIndex].id);
+                    if (activeItem) {
+                        activeItem.classList.add('active');
+                        
+                        // Rola para o item ativo
+                        activeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }
+            }
+            
+            // SUBMISSÃO DO FORMULÁRIO (envio de upload e tratamento da resposta)
+            $('#upload-form').on('submit', function(e) {
+                e.preventDefault();
+                const fileInput = $('#audio-file')[0];
+                if (fileInput.files.length === 0) {
+                    alert('Por favor, selecione um arquivo de áudio.');
+                    return;
+                }
+                
+                const file = fileInput.files[0];
+                const formData = new FormData();
+                formData.append('file', file);
+                
+                // Mostra o progresso e oculta o resultado
+                $('#progress-container').removeClass('hidden');
+                $('#result-container').addClass('hidden');
+                
+                // Para fins de demonstração, vamos simular uma resposta do servidor
+                // Em um ambiente real, você enviaria para o servidor e receberia a resposta
+                setTimeout(function() {
+                    // Simula resposta do servidor
+                    simulateServerResponse(file);
+                }, 2000);
+                
+                // Aqui seria o código real para enviar ao servidor:
+                /*
+                $.ajax({
+                    url: '/upload',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        $('#progress-container').addClass('hidden');
+                        processServerResponse(response, file.name);
+                    },
+                    error: function(xhr) {
+                        $('#progress-container').addClass('hidden');
+                        let errorMessage = 'Ocorreu um erro ao processar o arquivo.';
+                        if (xhr.responseJSON && xhr.responseJSON.error) {
+                            errorMessage = xhr.responseJSON.error;
+                        }
+                        alert(errorMessage);
+                    }
+                });
+                */
+            });
+            
+            // Função para processar a resposta do servidor
+            function processServerResponse(response, fileName) {
+                // Define o arquivo de áudio no player
+                audioPlayer.src = response.file_path;
+                audioPlayer.dataset.filename = fileName;
+                
+                // Processa a transcrição
+                processTranscription(response.transcription);
+                
+                // Mostra o resultado
+                $('#result-container').removeClass('hidden');
+                
+                // Cria as barras do visualizador
+                createBars();
+            }
+            
+            // APENAS PARA DEMONSTRAÇÃO - Simula a resposta do servidor
+            function simulateServerResponse(file) {
+                // Cria uma URL local para o arquivo selecionado
+                const audioUrl = URL.createObjectURL(file);
+                
+                // Simula uma transcrição
+                const demoTranscriptions = [
+                    "Olá, este é um teste de transcrição automática. A inteligência artificial consegue converter áudio em texto com boa precisão. Esta tecnologia está se tornando cada vez mais comum em diversas aplicações.",
+                    "Bom dia a todos! Estamos aqui reunidos para discutir os novos projetos da empresa. Precisamos definir as metas para o próximo trimestre e avaliar os resultados obtidos até agora.",
+                    "Este é um exemplo de áudio para teste. A tecnologia de reconhecimento de voz tem avançado muito nos últimos anos. Agora podemos transcrever áudio em tempo real com uma precisão cada vez maior."
+                ];
+                
+                const randomTranscription = demoTranscriptions[Math.floor(Math.random() * demoTranscriptions.length)];
+                
+                // Simula o objeto de resposta
+                const response = {
+                    file_path: audioUrl,
+                    transcription: randomTranscription
+                };
+                
+                // Oculta o progresso
+                $('#progress-container').addClass('hidden');
+                
+                // Processa a resposta
+                processServerResponse(response, file.name);
+                
+                // Adiciona à lista de áudios reproduzidos
+                audioPlayer.addEventListener('loadedmetadata', function() {
+                    addPlayedAudio(file.name, audioUrl, randomTranscription, audioPlayer.duration);
+                });
+            }
+            
+            // Verificar se há suporte para áudio
+            if (!(window.AudioContext || window.webkitAudioContext)) {
+                alert("Seu navegador não suporta Web Audio API. O visualizador de áudio não funcionará.");
+            }
+            // Adiciona botão para enviar via WhatsApp após o container de transcrição
+$('#result-container').append(`
+    <div class="mt-3">
+        <button id="whatsapp-share" class="btn btn-success">
+            <i class="bi bi-whatsapp me-2"></i>Compartilhar via WhatsApp
+        </button>
+    </div>
+`);
+
+// Evento para o botão de compartilhamento do WhatsApp
+$(document).on('click', '#whatsapp-share', function() {
+    if (fullTranscription) {
+        // Prepara o texto para URL (codifica para URL)
+        const encodedText = encodeURIComponent(fullTranscription);
+        
+        // Cria a URL do WhatsApp Web
+        const whatsappUrl = `https://web.whatsapp.com/send?text=${encodedText}`;
+        
+        // Abre o WhatsApp Web em uma nova janela
+        window.open(whatsappUrl, '_blank');
+    } else {
+        alert('Nenhuma transcrição disponível para compartilhar.');
+    }
+});
+        });
+    </script>
+</body>
+</html>
